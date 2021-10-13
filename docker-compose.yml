@@ -1,0 +1,76 @@
+version: "3.3"
+
+services:
+  # app:
+
+  worker:
+    networks:
+      - default
+    volumes:
+      - ./src:/src
+    environment:
+      - C_FORCE_ROOT=1
+      - CELERYD_PREFETCH_MULTIPLIER=1
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+      - REDIS_PASSWORD=RZusBKt30UiVaHCcsvXZ08YZJHXskAqzGoVGZcqjQ5Zzx1LMcervJnZq7NzuxLkiLu1hX4xaGhvgT9Wq51htJf0IZZh3A97XfZJu
+    build:
+      context: ./docker_images
+      dockerfile: celery.dockerfile
+    entrypoint: ["/src/run_celery.sh"]
+    depends_on:
+      - queue
+
+  queue:
+    image: rabbitmq:3.8-management
+    networks:
+      - default
+    volumes:
+      - "./advanced.config:/etc/rabbitmq/advanced.config"
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+      - REDIS_PASSWORD=RZusBKt30UiVaHCcsvXZ08YZJHXskAqzGoVGZcqjQ5Zzx1LMcervJnZq7NzuxLkiLu1hX4xaGhvgT9Wq51htJf0IZZh3A97XfZJu
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    sysctls:
+      net.ipv4.tcp_keepalive_time: 60
+      net.ipv4.tcp_keepalive_intvl: 10
+      net.ipv4.tcp_keepalive_probes: 4
+
+  flower:
+    image: mher/flower:0.9.7
+    ports:
+      - "5555:5555"
+    volumes:
+      - flower_data:/app
+    networks:
+      - default
+    environment:
+      - FLOWER_BASIC_AUTH=admin:admin
+      - REDIS_PASSWORD=RZusBKt30UiVaHCcsvXZ08YZJHXskAqzGoVGZcqjQ5Zzx1LMcervJnZq7NzuxLkiLu1hX4xaGhvgT9Wq51htJf0IZZh3A97XfZJu
+    command: [
+        "--broker_api=http://admin:admin@queue:15672/api/",
+        "--broker=amqp://admin:admin@queue:5672//",
+        "--persistent=true",
+        "--state_save_interval=60000" # 1 minute in milliseconds
+    ]
+    depends_on:
+      - queue
+
+  redis:
+    image: redis:6.2.2
+    networks:
+      - default
+    volumes:
+      - "./redis.conf:/usr/local/etc/redis/redis.conf"
+      - "./users.acl:/usr/local/etc/redis/users.acl"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+volumes:
+  flower_data:
+networks:
+  default:
